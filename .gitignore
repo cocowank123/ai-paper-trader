@@ -1,0 +1,10 @@
+# Secrets — NEVER commit this (your API key lives here locally)
+.env
+
+# Python junk
+__pycache__/
+*.pyc
+venv/
+
+# NOTE: account_state.json is intentionally NOT ignored — GitHub Actions
+# commits it back each run so your paper P&L persists between cloud cycles.

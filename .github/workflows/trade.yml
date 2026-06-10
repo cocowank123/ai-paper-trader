@@ -1,0 +1,48 @@
+name: AI Paper Trader
+
+# Runs one trading cycle on a schedule in GitHub's cloud (works with your PC off).
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 min. NOTE: GitHub may delay or skip runs
+                              # under load — treat it as "roughly every 15-30 min".
+  workflow_dispatch: {}       # also lets you run it manually from the Actions tab
+
+# Allow the workflow to commit the updated account state back to the repo.
+permissions:
+  contents: write
+
+# Never let two cycles run at the same time (they'd clobber the saved state).
+concurrency:
+  group: trader
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run one trading cycle
+        env:
+          # Your key is stored as an encrypted GitHub Secret, never in the code.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # GitHub's servers can't reach Binance, so use Kraken for data here.
+          EXCHANGE: kraken
+        run: python main.py --once
+
+      - name: Save updated account state back to the repo
+        run: |
+          git config user.name "trader-bot"
+          git config user.email "trader-bot@users.noreply.github.com"
+          git add account_state.json
+          git commit -m "update paper account state [skip ci]" || echo "no changes to commit"
+          git push

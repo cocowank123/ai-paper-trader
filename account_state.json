@@ -1,0 +1,25 @@
+{
+  "cash": 10001.054538934506,
+  "starting_equity": 10000.0,
+  "realized_pnl": 1.0545389345065532,
+  "position": null,
+  "trades": [
+    {
+      "event": "open",
+      "side": "short",
+      "price": 61126.24,
+      "size": 0.032719,
+      "stop": 62021.16,
+      "take_profit": 59783.86,
+      "time": "2026-06-10T12:16:02.631333+00:00"
+    },
+    {
+      "event": "close",
+      "side": "short",
+      "price": 61094.01,
+      "pnl": 1.05,
+      "reason": "signal change",
+      "time": "2026-06-10T12:20:37.322159+00:00"
+    }
+  ]
+}

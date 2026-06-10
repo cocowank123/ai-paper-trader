@@ -1,0 +1,8 @@
+# Core dependencies for the AI paper-trading tool.
+# Install everything with:   pip install -r requirements.txt
+
+anthropic>=0.40        # Claude API client (the "brain")
+ccxt>=4.2              # Unified crypto-exchange API (public market data)
+pandas>=2.0            # Indicator math (EMA / RSI / ATR)
+feedparser>=6.0        # Reads news RSS feeds
+python-dotenv>=1.0     # Loads your API key from a .env file
