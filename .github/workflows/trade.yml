@@ -7,6 +7,11 @@ on:
                               # under load — treat it as "roughly every 15-30 min".
   workflow_dispatch: {}       # also lets you run it manually from the Actions tab
 
+# Run the building-block actions on the current Node version (silences the
+# "Node.js 20 deprecated" warning and keeps working past GitHub's cutoff).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Allow the workflow to commit the updated account state back to the repo.
 permissions:
   contents: write
