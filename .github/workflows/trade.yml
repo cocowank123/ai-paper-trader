@@ -1,22 +1,21 @@
 name: AI Paper Trader
 
-# Runs one trading cycle on a schedule in GitHub's cloud (works with your PC off).
+# GitHub's free cron scheduler is unreliable at high frequency, so instead of
+# asking it to fire every 15 min, we start ONE long-running job every 6 hours
+# that loops internally — running a cycle every 15 min for ~5.5 hours. This
+# gives a reliable cadence and ~88 cycles/day.
 on:
   schedule:
-    - cron: "*/15 * * * *"   # every 15 min. NOTE: GitHub may delay or skip runs
-                              # under load — treat it as "roughly every 15-30 min".
-  workflow_dispatch: {}       # also lets you run it manually from the Actions tab
+    - cron: "0 */6 * * *"   # start a fresh ~5.5h block every 6 hours
+  workflow_dispatch: {}       # also lets you start one manually any time
 
-# Run the building-block actions on the current Node version (silences the
-# "Node.js 20 deprecated" warning and keeps working past GitHub's cutoff).
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-# Allow the workflow to commit the updated account state back to the repo.
 permissions:
   contents: write
 
-# Never let two cycles run at the same time (they'd clobber the saved state).
+# Don't let a new block start while the previous one is still looping.
 concurrency:
   group: trader
   cancel-in-progress: false
@@ -24,6 +23,7 @@ concurrency:
 jobs:
   trade:
     runs-on: ubuntu-latest
+    timeout-minutes: 350      # stay safely under GitHub's 6-hour job limit
     steps:
       - name: Get the code
         uses: actions/checkout@v4
@@ -36,32 +36,32 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run one trading cycle
+      - name: Trade in a loop (one cycle every 15 min for ~5.5 hours)
         env:
-          # Your key is stored as an encrypted GitHub Secret, never in the code.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # GitHub's servers can't reach Binance, so use Kraken for data here.
-          EXCHANGE: kraken
-        run: python main.py --once
-
-      - name: Save updated account state back to the repo
+          EXCHANGE: kraken      # GitHub's servers can't reach Binance
         run: |
           git config user.name "trader-bot"
           git config user.email "trader-bot@users.noreply.github.com"
-          git add account_state.json
-          # Only commit + push if the state actually changed this cycle.
-          if git diff --cached --quiet; then
-            echo "No state change this cycle — nothing to push."
-            exit 0
-          fi
-          git commit -m "update paper account state [skip ci]"
-          # Rebase + retry so overlapping runs don't reject each other.
-          for attempt in 1 2 3; do
-            if git pull --rebase origin main && git push; then
-              exit 0
+
+          CYCLES=22
+          for i in $(seq 1 $CYCLES); do
+            echo ""
+            echo "######## CYCLE $i / $CYCLES ########"
+            python main.py --once || echo "(cycle errored — continuing)"
+
+            # Commit + push the account state ONLY if it actually changed.
+            git add account_state.json
+            if git diff --cached --quiet; then
+              echo "(no state change this cycle)"
+            else
+              git commit -m "update paper account state [skip ci]"
+              for attempt in 1 2 3; do
+                if git pull --rebase origin main && git push; then break; fi
+                echo "push race, retry $attempt..."; sleep 3
+              done
             fi
-            echo "Push race, retrying ($attempt)..."
-            sleep 3
+
+            # Wait 15 minutes before the next cycle (skip the wait on the last one).
+            if [ "$i" -lt "$CYCLES" ]; then sleep 900; fi
           done
-          echo "Could not push state after retries." >&2
-          exit 1
