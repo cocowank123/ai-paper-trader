@@ -54,7 +54,7 @@ class Trader:
 
         # 3. AI signal ---------------------------------------------------------
         signal = brain.get_signal(self.client, s.model, tech, headlines_text)
-        print(f"  AI says: {signal.direction.upper()}  (confidence {signal.confidence})")
+        print(f"  AI says: {signal.direction.upper()}  (confidence {signal.confidence}, trades at >= {s.min_confidence})")
         print(f"    \"{signal.reasoning}\"")
 
         # 4. Enforce stops on any existing position ----------------------------

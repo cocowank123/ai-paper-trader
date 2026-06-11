@@ -40,6 +40,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EXCHANGE: kraken      # GitHub's servers can't reach Binance
+          MIN_CONFIDENCE: "50"  # only trade when the AI is at least this confident
         run: |
           git config user.name "trader-bot"
           git config user.email "trader-bot@users.noreply.github.com"
