@@ -1,12 +1,10 @@
 """
-trader.py — Ties everything together into one decision cycle:
+trader.py — One decision cycle of the Quant Regime Engine:
 
-    1. Get the market snapshot (price + indicators)
-    2. Get recent news headlines
-    3. Ask the AI brain for a signal (long / short / flat + confidence)
-    4. Enforce stops/take-profit on any open position
-    5. Move the paper position to match the signal (if confident enough)
-    6. Print a clear report and save state
+    1. Fetch USD/JPY 30m data + indicators (z-score, 200 EMA, ATR, session)
+    2. Enforce stop / take-profit on any open position
+    3. If flat, check the QRE entry rules and open a LONG if they all pass
+    4. Print a clear report and save state
 
 run_once()  -> one cycle.
 run_loop()  -> repeat forever on a timer.
@@ -14,11 +12,8 @@ run_loop()  -> repeat forever on a timer.
 
 import time
 
-import anthropic
-
-import brain
 import market_data
-import news_feed
+import strategy
 from config import Settings
 from paper_broker import PaperBroker
 
@@ -26,65 +21,48 @@ from paper_broker import PaperBroker
 class Trader:
     def __init__(self, settings: Settings):
         self.s = settings
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         self.broker = PaperBroker(settings.state_file, settings.starting_equity)
 
     def run_once(self) -> None:
         s = self.s
         print("\n" + "=" * 64)
-        print(f"  CYCLE @ {time.strftime('%Y-%m-%d %H:%M:%S')}  |  {s.symbol} {s.timeframe}")
+        print(f"  CYCLE @ {time.strftime('%Y-%m-%d %H:%M:%S')}  |  {s.symbol} {s.interval}")
         print("=" * 64)
 
         # 1. Market snapshot ---------------------------------------------------
         try:
-            tech = market_data.get_market_snapshot(s.symbol, s.exchange, s.timeframe)
+            snap = market_data.get_snapshot(s)
         except Exception as exc:
             print(f"  ! Could not fetch market data: {exc}")
             return
-        price = tech["price"]
-        print(f"  Price {price}  |  {tech['trend']}  |  RSI {tech['rsi14']}  |  "
-              f"24-candle move {tech['recent_change_pct']}%")
+        price = snap["price"]
+        print(f"  Price {price}  |  {snap['trend']}  |  z-score {snap['zscore']}  |  ATR {snap['atr']}")
+        print(f"  EMA200 {snap['ema200']}  |  session {'OPEN' if snap['in_session'] else 'CLOSED'} "
+              f"(hour {snap['hour_utc']} UTC)")
 
-        # 2. News --------------------------------------------------------------
-        headlines = news_feed.fetch_headlines(
-            s.news_feeds, s.news_lookback_hours, s.news_max_items
-        )
-        print(f"  Pulled {len(headlines)} recent headlines")
-        headlines_text = news_feed.format_for_prompt(headlines)
+        # 2. Manage any open position -----------------------------------------
+        ev = self.broker.check_stops(price)
+        if ev:
+            print(f"  >> {ev['reason'].upper()} hit — closed long for P&L {ev['pnl']}")
 
-        # 3. AI signal ---------------------------------------------------------
-        signal = brain.get_signal(self.client, s.model, tech, headlines_text)
-        print(f"  AI says: {signal.direction.upper()}  (confidence {signal.confidence}, trades at >= {s.min_confidence})")
-        print(f"    \"{signal.reasoning}\"")
-
-        # 4. Enforce stops on any existing position ----------------------------
-        stop_event = self.broker.check_stops(price)
-        if stop_event:
-            print(f"  >> {stop_event['reason'].upper()} hit — closed {stop_event['side']} "
-                  f"for P&L {stop_event['pnl']}")
-
-        # 5. Act on the signal -------------------------------------------------
-        desired = signal.direction if signal.confidence >= s.min_confidence else "flat"
-        current = self.broker.position["side"] if self.broker.position else "flat"
-
-        if desired != current:
-            if self.broker.position:  # close whatever we hold first
-                ev = self.broker.close_position(price, "signal change")
-                print(f"  >> Closed {ev['side']} (signal change) for P&L {ev['pnl']}")
-            if desired in ("long", "short"):
-                ev = self.broker.open_position(
-                    desired, price, tech["atr14"],
-                    s.atr_mult, s.reward_risk, s.position_fraction,
-                )
-                print(f"  >> Opened {desired.upper()} @ {price}  "
-                      f"(stop {ev['stop']}, target {ev['take_profit']})")
-        else:
-            if current == "flat":
-                print("  >> No trade (staying out)")
+        # 3. Entry (long only, only when flat) --------------------------------
+        if self.broker.position is None:
+            decision = strategy.evaluate(snap, s)
+            print(f"  Signal: {decision['reason']}")
+            if decision["enter"]:
+                stop = price - snap["atr"] * s.sl_atr_mult
+                take_profit = price + snap["atr"] * s.tp_atr_mult
+                ev = self.broker.open_long(price, stop, take_profit, s.risk_per_trade)
+                print(f"  >> Opened LONG @ {price}  (stop {ev['stop']}, target {ev['take_profit']}, "
+                      f"size {ev['size']})")
             else:
-                print(f"  >> Holding existing {current} position")
+                print("  >> No entry (conditions not all met)")
+        else:
+            p = self.broker.position
+            print(f"  >> Holding LONG @ {round(p['entry'], 3)} "
+                  f"(stop {round(p['stop'], 3)}, target {round(p['take_profit'], 3)})")
 
-        # 6. Report + persist --------------------------------------------------
+        # 4. Report + persist --------------------------------------------------
         self.broker.save()
         self._print_account(price)
 
@@ -100,10 +78,9 @@ class Trader:
             print("\nStopped. Your account state is saved — run again anytime to resume.")
 
     def print_status(self) -> None:
-        """Show the account without trading (uses the latest price for valuation)."""
         try:
-            tech = market_data.get_market_snapshot(self.s.symbol, self.s.exchange, self.s.timeframe)
-            price = tech["price"]
+            snap = market_data.get_snapshot(self.s)
+            price = snap["price"]
         except Exception:
             price = self.broker.position["entry"] if self.broker.position else 0.0
         self._print_account(price)
@@ -111,11 +88,11 @@ class Trader:
     def _print_account(self, price: float) -> None:
         a = self.broker.summary(price)
         print("  " + "-" * 60)
-        print(f"  ACCOUNT  equity ${a['equity']}  "
-              f"(return {a['total_return_pct']:+.2f}%)")
+        print(f"  ACCOUNT  equity ${a['equity']}  (return {a['total_return_pct']:+.2f}%)")
         print(f"           realized ${a['realized_pnl']}  unrealized ${a['unrealized_pnl']}")
-        print(f"           closed trades {a['closed_trades']}  win rate {a['win_rate_pct']}%")
+        print(f"           closed trades {a['closed_trades']}  "
+              f"win rate {a['win_rate_pct']}%  profit factor {a['profit_factor']}")
         if a["open_position"]:
             p = a["open_position"]
-            print(f"           OPEN {p['side']} {round(p['size'], 6)} @ {round(p['entry'], 2)}")
+            print(f"           OPEN long size {round(p['size'], 4)} @ {round(p['entry'], 3)}")
         print("  " + "-" * 60)

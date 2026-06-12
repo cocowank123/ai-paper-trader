@@ -1,70 +1,48 @@
 """
-config.py — Loads all settings from your .env file (or environment variables)
-and exposes them as a single `Settings` object the rest of the app imports.
+config.py — Settings for the Quant Regime Engine (QRE) strategy.
 
-Why this exists: keeping configuration (and especially your API key) in one
-place, separate from the code, is good practice — you can change behaviour
-without editing logic, and your secret key never gets hard-coded.
+All values can be overridden by environment variables (handy for the GitHub
+Actions workflow), but the defaults below match the Pine Script v6.1 exactly.
+No API keys needed — this strategy is pure math.
 """
 
 import os
-from dataclasses import dataclass, field
-
-from dotenv import load_dotenv
-
-# Read the .env file in this folder and load it into the environment.
-load_dotenv()
+from dataclasses import dataclass
 
 
 def _get(name: str, default: str) -> str:
-    """Read an env var, falling back to a default if it's missing/blank."""
     value = os.getenv(name)
     return value if value not in (None, "") else default
 
 
-# Free, no-key-required crypto news feeds (RSS). Add or remove as you like.
-DEFAULT_NEWS_FEEDS = [
-    "https://www.coindesk.com/arc/outboundfeeds/rss/",
-    "https://cointelegraph.com/rss",
-    "https://www.newsbtc.com/feed/",
-]
-
-
 @dataclass
 class Settings:
-    # --- AI ---
-    anthropic_api_key: str = _get("ANTHROPIC_API_KEY", "")
-    model: str = _get("MODEL", "claude-haiku-4-5")
-    min_confidence: int = int(_get("MIN_CONFIDENCE", "60"))
+    # --- Market / data (Yahoo Finance ticker for USD/JPY) ---
+    symbol: str = _get("SYMBOL", "USDJPY=X")
+    interval: str = _get("INTERVAL", "30m")      # 30-minute candles
+    data_period: str = _get("DATA_PERIOD", "1mo")  # how much history to pull
 
-    # --- Market ---
-    symbol: str = _get("SYMBOL", "BTC/USDT")
-    exchange: str = _get("EXCHANGE", "binance")
-    timeframe: str = _get("TIMEFRAME", "1h")
+    # --- Statistical Z-Score engine ---
+    z_length: int = int(_get("Z_LENGTH", "20"))          # 20 x 30m = 10-hour lookback
+    z_entry: float = float(_get("Z_ENTRY", "-2.0"))      # long when z-score <= this
 
-    # --- Risk / sizing ---
-    position_fraction: float = float(_get("POSITION_FRACTION", "0.20"))
-    atr_mult: float = float(_get("ATR_MULT", "2.0"))
-    reward_risk: float = float(_get("REWARD_RISK", "1.5"))
+    # --- Macro filter ---
+    ema_length: int = int(_get("EMA_LENGTH", "200"))     # 200 EMA macro trend filter
+
+    # --- Volatility bracket (ATR stop / take-profit) ---
+    atr_length: int = int(_get("ATR_LENGTH", "14"))
+    sl_atr_mult: float = float(_get("SL_ATR_MULT", "2.2"))   # stop  = entry - ATR*2.2
+    tp_atr_mult: float = float(_get("TP_ATR_MULT", "4.4"))   # target = entry + ATR*4.4 (2:1 R:R)
+
+    # --- Risk engine ---
+    risk_per_trade: float = float(_get("RISK_PER_TRADE", "1.5"))  # % of equity risked per trade
     starting_equity: float = float(_get("STARTING_EQUITY", "10000"))
 
-    # --- Loop / news ---
-    interval_minutes: int = int(_get("INTERVAL_MINUTES", "60"))
-    news_lookback_hours: int = int(_get("NEWS_LOOKBACK_HOURS", "12"))
-    news_max_items: int = int(_get("NEWS_MAX_ITEMS", "25"))
-    news_feeds: list = field(default_factory=lambda: list(DEFAULT_NEWS_FEEDS))
+    # --- Loop ---
+    interval_minutes: int = int(_get("INTERVAL_MINUTES", "15"))
 
     # Where the simulated account is saved (so P&L survives restarts).
     state_file: str = "account_state.json"
-
-    def require_api_key(self) -> None:
-        """Fail early with a clear message if the key is missing."""
-        if not self.anthropic_api_key or self.anthropic_api_key.startswith("sk-ant-paste"):
-            raise SystemExit(
-                "\nNo Anthropic API key found.\n"
-                "  1. Copy .env.example to .env\n"
-                "  2. Put your real key from https://console.anthropic.com in it\n"
-            )
 
 
 # A single shared instance the whole app imports: `from config import settings`

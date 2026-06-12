@@ -1,8 +1,5 @@
-# Core dependencies for the AI paper-trading tool.
-# Install everything with:   pip install -r requirements.txt
+# Dependencies for the Quant Regime Engine (QRE) strategy.
+# Install with:   pip install -r requirements.txt
 
-anthropic>=0.40        # Claude API client (the "brain")
-ccxt>=4.2              # Unified crypto-exchange API (public market data)
-pandas>=2.0            # Indicator math (EMA / RSI / ATR)
-feedparser>=6.0        # Reads news RSS feeds
-python-dotenv>=1.0     # Loads your API key from a .env file
+yfinance>=0.2     # Free USD/JPY (and other) market data, no account needed
+pandas>=2.0       # Indicator math (Z-Score, EMA, ATR)
