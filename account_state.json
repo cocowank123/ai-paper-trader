@@ -1,15 +1,8 @@
 {
-  "cash": 8999.73773957582,
+  "cash": 8861.43404907688,
   "starting_equity": 10000.0,
-  "realized_pnl": -1000.262260424182,
-  "position": {
-    "side": "long",
-    "size": 416.57738102090997,
-    "entry": 158.126,
-    "stop": 157.80194,
-    "take_profit": 158.77412,
-    "opened_at": "2026-09-25T05:15:35.750199+00:00"
-  },
+  "realized_pnl": -1138.5659509231216,
+  "position": null,
   "trades": [
     {
       "event": "open",
@@ -410,6 +403,14 @@
       "stop": 157.802,
       "take_profit": 158.774,
       "time": "2026-09-25T05:15:35.750208+00:00"
+    },
+    {
+      "event": "close",
+      "side": "long",
+      "price": 157.794,
+      "pnl": -138.3,
+      "reason": "stop-loss",
+      "time": "2026-09-25T10:57:53.964968+00:00"
     }
   ]
 }
